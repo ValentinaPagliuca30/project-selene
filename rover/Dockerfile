@@ -7,7 +7,7 @@ EXPOSE 8080
 
 FROM base
 
-RUN pip install --no-cache-dir httpx
+RUN pip install --no-cache-dir httpx networkx anthropic
 
 COPY . /rover/
 
