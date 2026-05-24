@@ -2,30 +2,94 @@
 
 ## Architecture and design decisions
 
-Latent Defense's framing was a useful starting point. The core idea is to avoid giving an LLM a raw infrastructure map and asking it to reason about blast radius, single points of failure, or attack paths. It will try to process the space as language and produce confident-sounding but unreliable answers.
+**WHAT IS MY GOAL?**
 
-My solution separates the two jobs explicitly. `mapping.py` is entirely deterministic and uses no LLM. It discovers pods via a port-scan on the documented range. I initially considered nmap, but it's an anti-pattern in any real network environment — IDS flags it, segmentation blocks it, and in a security context that matters; I also ruled out hardcoded mapping because it removes any meaningful auto-discovery. In production I would use DNS SRV-record service discovery. The mapper traverses declared dependencies and supplies breadth-first until the full colony is mapped, producing `map.json`: a flat node schema with raw per-pod data and a consolidated edge model that records each claim separately — when a consumer and supplier disagree on a relationship, the discrepancy is preserved with a `disputed: true` flag rather than silently resolved. `reporting.py` then loads that map and runs two things in parallel: eleven `networkx`-based deterministic analyses (centrality, dependency cycles, articulation vertices, single-supplier resource detection, cascade failure simulation, metadata resilience-anomaly sweep, decommissioned-capability detection, stale-config drift, self-sufficient pod detection, onboarding chronology, consolidation-event extraction), and four targeted LLM calls that each receive only the relevant slice of those findings — never the raw API responses, and never asked to derive structural facts from scratch. The LLM writes the historical narrative, triages discrepancies, drafts recommendations, and produces the executive summary. All LLM calls run at `temperature=0` to make the deliverable reproducible — re-running the agent on the same `map.json` produces the same report.
+To produce a comprehensive map of how the colony's pods depend on each other and to assess the colony's operational resilience. The idea is to build an agent that discovers the colony network, crawls every pod endpoint, maps the infrastructure, analyzes it for systemic risks, and produces a report.
 
-The key design principle: structural reasoning belongs to deterministic algorithms; narrative, interpretation, and judgment belong to the model.
+**WHAT DID I BUILD?**
 
-Three decisions follow directly. Discovery uses a port-scan on a documented range rather than nmap (IDS anti-pattern) or hardcoded mapping (no auto-discovery). Disputes are never auto-adjudicated: the LLM tags a dispute as `likely_benign` only when the resource is non-critical AND confidence is high AND the explanation is intrinsically safe; everything physical — power, water, atmosphere, medical, food — defaults to `needs_human_review` regardless of confidence. And each LLM call receives only the relevant slice of findings, never the full `map.json` — passing the full map to a single prompt would undermine the principle the entire architecture rests on.
+*Diagram: `mapping.py` → `map.json` → `reporting.py`*
 
-This system is not continuously updated, not queryable in real time, and does not track topology drift across runs. What it builds is a snapshot analysis with LLM narration on top of a deterministic graph layer. Given the three-to-five hour scope, that felt like the right direction; the implementation is a simplified version of the goal.
+My mapping agent discovers the colony and writes its findings to `/rover/output/map.json`.
 
-## Adversarial review
+My reporting agent reads `map.json` and produces an analysis report.
 
-I treated each LLM output as untrusted and validated it against `map.json` as the source of truth. Across four review iterations I caught and fixed four distinct classes of error, each requiring a structurally deeper defense than the previous: a numerical metric mix-up (narrative conflated unique consumer count with sole-supplier resource count) fixed by adding explicit numerical-fidelity instructions to the prompt; a schema-direction inversion (Vault relationships described backwards because the `from = consumer` convention was implicit) fixed by adding a worked-example convention block; an enumeration omission (narrative said "three consolidation decisions" but four existed in the logs) fixed by extracting consolidation events deterministically into a pre-labeled list and instructing the prompt to use that list exclusively; and a keyword gap (a fifth event — Zephyr's humidity-reclamation retirement — missed because "retired" wasn't in the filter) fixed by extending the keyword set. The pattern was prompt rule → explicit convention → deterministic pre-extraction → keyword expansion. The agent is fundamentally incomplete; the value of this design is making the incompleteness visible and recoverable.
+I started by writing `mapping.py`. It is entirely deterministic. It discovers pods through a port scan on the documented range. I initially considered using `nmap`, but that would be an anti-pattern in any real network environment: IDS tools would flag it, segmentation could block it, and in a security context, that matters. I also ruled out hardcoded mapping because it removes any meaningful auto-discovery. In production, I would use DNS SRV-record service discovery.
+
+Once it finds the pods, the mapper traverses all declared dependencies and supply relationships breadth-first until every pod has been fully visited.
+
+The output is `map.json`, which has four sections: pod data, relationships, discrepancies, and run metadata.
+
+Pod data includes everything the API returned for each of the twelve pods — specs, logs, and messages — with the raw responses preserved alongside the normalized data so that nothing gets reinterpreted.
+
+Relationships are recorded by claim. If both sides agree — for example, one pod says "I depend on this," and the other says "I supply this" — the edge has two entries and is confirmed. If only one side made the claim, the edge has one entry and is flagged as `disputed: true`.
+
+Discrepancies are all the disputed edges collected into one list, with a plain-language description of what does not match.
+
+Then I wrote `reporting.py`. It reads `map.json` and does two things in parallel.
+
+First, it runs a set of deterministic graph analyses, such as identifying which pods are most depended upon, whether there are circular dependencies, which resources have only one supplier, and what happens if a pod goes down.
+
+Second, it makes four targeted calls to an LLM: one to write the historical narrative from the logs, one to triage the discrepancies, one to draft recommendations, and one to produce the executive summary. Each call receives only the data relevant to that specific question. I also set all LLM calls to run at `temperature=0`, so that re-running the agent on the same `map.json` always produces the same report.
+
+**WHY DID I BUILD IT THIS WAY?**
+
+Latent Defense's framing was a useful starting point. The main idea is that if you give an LLM a raw infrastructure map and ask it to reason about failure modes and attack paths, it will try to process the space as language and may produce confident-sounding but unreliable answers.
+
+So the principle I followed in the design was to assign structural reasoning — including graph traversal, cycle detection, and failure simulation — to deterministic algorithms, while leaving narrative, interpretation, and judgment to the model.
+
+Three decisions follow directly from this principle.
+
+- First, discovery uses a port scan for the reasons explained above.
+- Second, for dispute handling, I had to find a compromise. Never adjudicating anything would overwhelm the human reviewer with noise. Auto-resolving everything with the LLM would risk silently getting a safety-relevant relationship wrong. So I chose a middle ground: the LLM can mark a dispute as `likely_benign` only when three things are all true — the resource is non-critical, confidence is high, and the explanation is intrinsically safe. Anything physical — power, water, atmosphere, medical supplies, or food — is marked as `needs_human_review` regardless of how confident the model is.
+- Third, each LLM call receives only a scoped slice of the findings, never the full `map.json`. Passing everything into one prompt would defeat the purpose of the system. The whole reason to build a structured world model first is so that it can be queried precisely, rather than asking the model to hold the entire space in context.
+
+## Issues I encountered and how I fixed them
+
+After building my agent, I ran four rounds of review to verify whether it had produced correct outputs, identify any errors, and determine what fixes were needed.
+
+The main errors I found were the following.
+
+First, the narrative was mixing up two different metrics: unique consumers of a pod versus resources for which that pod is the sole supplier. As a result, it cited the wrong count in the report. To fix this, I added explicit instructions to the prompt specifying which metric is which and requiring the model to name the metric whenever it states a number.
+
+Second, the narrative described Vault's relationships backwards, saying that Vault supplied something when it was actually the consumer. This happened because the `from = consumer` convention in the edge schema had never been stated explicitly. To fix this, I added a worked example to the prompt showing the convention with a concrete case.
+
+Third, the narrative said that the colony made "three consolidation decisions," but there were actually four in the logs. To fix this, I extracted all consolidation events deterministically into a labeled list before the LLM call and instructed the model to use that list as its only source, rather than re-reading the logs itself.
+
+A fifth event — Zephyr retiring its humidity reclamation loop — was not included in the extracted list because "retired" was not part of my keyword filter. I fixed this by extending the keyword set.
 
 ## What the agent found
 
-The headline finding is that the colony has been systematically dismantling its own resilience. Twelve consolidation events between October 2092 and February 2094 — each individually defensible as maintenance savings or budget reallocation — collectively removed every backup and redundancy from the colony's two most critical systems, Helios and Aquifer, leaving them each as sole providers with no fallback.
+The mapper found 39 relationships between pods. Of these, 16 — or 41% — were disputed: one side claimed the relationship, while the other did not acknowledge it.
 
-Aquifer runs at 91.6% of rated capacity with `backup_systems: 0` and is the sole supplier of six distinct resource flows (coolant, irrigation, slurry water, humidity feedstock, sterilization water, cooling water) with nothing to fall back on. Helios is the sole power source for eight pods, none with an alternative. The two are mutually dependent: Helios powers Aquifer, Aquifer cools Helios. Vault — the pod explicitly designated for emergency reserves — has self-declared the decommissioning of its water backup and coolant distribution in its own metadata. Against this backdrop, the July 2094 safety review declared all pods nominal — which is precisely the problem: the official monitoring system saw nothing alarming in an infrastructure that had quietly lost all its safety margins.
+The agent found two systems for which there is no fallback if they fail.
 
-Secondary findings: Prometheus has a stale `water_source: aquifer-direct` metadata field contradicted by a 2093 log entry recording the connection sealed and the flow rerouted through Hydroponics' irrigation circuit — a hidden shared dependency invisible from either pod's status alone. Sentinel is the one genuinely resilient pod: zero confirmed dependencies, 180 kW of independent solar, 120 L/day ice harvest, and the most recently commissioned pod in the colony (77 days after the founding cohort, by uptime ordering) — independence by deliberate late-stage design.
+First, Aquifer is the colony's sole water hub. It runs at 91.6% of rated capacity, supplies six different resource flows to the rest of the colony, and has `backup_systems: 0`.
 
-## What I'd do with more time
+Second, Helios is the sole power source for eight pods, none of which have an alternative. The two systems are mutually dependent: Helios powers Aquifer, and Aquifer cools Helios.
 
-The most important missing piece is multi-step cascade simulation: the current failure simulation is single-hop and misses second-order effects (an Aquifer failure propagates to Helios, which then stops powering everything else). Beyond that: a self-evaluation loop after each LLM call to validate numerical and directional claims against the structured findings before writing them into the report; prompt-injection hardening on log and comms ingestion (XML-delimited content, system-prompt rule to ignore instructions inside log blocks); `/status` stub detection — source review shows the endpoint is hardcoded to `{nominal, [], null}` regardless of pod config, and a robust agent should detect zero variance across all twelve pods and flag it as uninformative telemetry rather than treat it as real status; quantitative trend detection for low-but-not-zero signals (Zephyr `backup_power_hours: 4`; Helios silicon feedstock at 140% of quarterly forecast; 1.2%/yr panel degradation); topology drift tracking by diffing successive `map.json` runs; and replacing the port-scan with DNS SRV-record service discovery so the agent doesn't depend on a documented range.
+Vault, the pod explicitly designated for emergency reserves, has decommissioned its water backup and coolant distribution and self-declared this in its own metadata.
 
-Two further alternatives I considered and ruled out for scope: graph visualization (D3, mermaid) in the deliverable — the brief asks for `map.json` and `report.md`, and the structured map is already consumable by any downstream visualization tool — and multi-agent orchestration with per-pod sub-agents, which would be the right shape for hundreds of nodes but adds coordination overhead unwarranted for twelve.
+The July 2094 safety review declared all pods nominal, but "nominal" only means that the pods are running, not that they are safe. Every backup had already been removed. The monitoring system had no way to see that.
+
+Those backups were not removed all at once. Between October 2092 and February 2094, the colony made twelve separate consolidation-related decisions, each of which was a reasonable cost-saving measure or budget reallocation at the time. No single decision looks wrong in isolation. But each one removed a small piece of redundancy, and together they left the two most critical systems with nothing underneath them.
+
+The analysis also found that Prometheus has a metadata field claiming that it draws water directly from Aquifer, but a 2093 log records that this connection was sealed and the flow was rerouted through Hydroponics' irrigation circuit. This creates a hidden shared dependency that is invisible from either pod's status.
+
+The agent also found that Sentinel is the one pod that could survive a colony-wide failure: it has zero confirmed dependencies, 180 kW of independent solar power, and 120 L/day of ice harvest. It was commissioned 77 days after the founding cohort, which suggests that its independence was a deliberate late-stage design choice.
+
+## What I would do with more time
+
+This exercise was scoped as a three-to-five-hour build, so I prioritized the pieces that would most reduce LLM failure modes within that window.
+
+The first thing I would implement with more time is multi-step cascade simulation. Right now, the analysis is mostly single-hop. This means it correctly identifies that Aquifer is critical and that it is connected to Helios, but it does not fully simulate the chain that would unfold afterward: Aquifer fails, Helios loses cooling, Helios goes down, and everything Helios powers goes dark.
+
+I would also add a self-check loop after each LLM call that automatically validates numbers, edge directions, and event counts against the structured findings. The four errors I caught manually should be caught by the system itself.
+
+Another important improvement would be prompt-injection hardening for log and communications ingestion. Logs and messages are untrusted inputs, and although I identified this as a possible attack vector, I did not have time to mitigate it within the scope of the project.
+
+I would also add /status stub detection. Every pod always responds with "everything is fine, no alerts" — not because it actually is, but because that response is hardcoded and never changes. A robust agent should notice that all twelve pods return exactly the same answer and conclude that the endpoint is not saying anything useful, rather than trusting that "all good" as real information.
+
+I also noticed, for example, that Zephyr has only four hours of backup power, which is a low number. My current check only flags systems with zero backup, so this issue was not included in the report. For this reason, I would add quantitative trend detection for weak signals such as Zephyr's four hours of backup power, Helios silicon feedstock being at 140% of the quarterly forecast, and panel degradation accumulating at 1.2% per year.
+
+The final and biggest step would be turning the snapshot into something live: rebuilding the agent and the system as a continuous monitoring tool that can detect when a backup path silently disappears, with a query layer on top of the structured map.
