@@ -73,8 +73,22 @@ def build_graph(map_data):
 
 
 def analyze_centrality(G):
-    unique_dependents = {n: len(set(G.predecessors(n))) for n in G.nodes}
-    ranked = sorted(unique_dependents.items(), key=lambda kv: kv[1], reverse=True)
+    # Count unique upstream consumers using CONFIRMED edges only, mirroring the
+    # same filter applied in analyze_cycles and simulate_failure. Without this
+    # filter, a disputed supplier-only claim (e.g. helios → medica for power,
+    # claimed by helios but not by medica) would inflate the centrality count
+    # for helios beyond the cascade simulation count, creating an internally
+    # inconsistent report.
+    confirmed_predecessors = {n: set() for n in G.nodes}
+    for u, v, data in G.edges(data=True):
+        if data.get("disputed", False):
+            continue
+        confirmed_predecessors[v].add(u)
+    ranked = sorted(
+        ((n, len(preds)) for n, preds in confirmed_predecessors.items()),
+        key=lambda kv: kv[1],
+        reverse=True,
+    )
     return ranked[:5]
 
 
@@ -678,7 +692,14 @@ def _format_cycles(cycles_obj):
 
 def _format_topo_spofs(spofs):
     if not spofs:
-        return "_No topological articulation vertices detected._"
+        return (
+            "_No topological articulation vertices detected. In densely cyclic "
+            "graphs like this one, articulation vertices are typically absent "
+            "because most node pairs have alternate paths through the cycle "
+            "structure — a null result here does not imply absence of "
+            "structural risk. The resource-level SPOFs in the next section are "
+            "the operative measure._"
+        )
     return "\n".join(f"- `{p}`" for p in spofs)
 
 

@@ -64,7 +64,7 @@ The mapper found 39 relationships between pods. Of these, 16 — or 41% — were
 
 The agent found two systems for which there is no fallback if they fail.
 
-First, Aquifer is the colony's sole water hub. It runs at 91.6% of rated capacity, supplies six different resource flows to the rest of the colony, and has `backup_systems: 0`.
+First, Aquifer is the colony's sole water hub. It runs at 91.6% of rated capacity, supplies seven different resource flows to the rest of the colony, and has `backup_systems: 0`.
 
 Second, Helios is the sole power source for eight pods, none of which have an alternative. The two systems are mutually dependent: Helios powers Aquifer, and Aquifer cools Helios.
 
