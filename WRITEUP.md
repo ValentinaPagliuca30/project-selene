@@ -2,41 +2,26 @@
 
 ## Architecture and design decisions
 
-**WHAT IS MY GOAL?**
+**What is my goal?**
 
 To produce a comprehensive map of how the colony's pods depend on each other and to assess the colony's operational resilience. The idea is to build an agent that discovers the colony network, crawls every pod endpoint, maps the infrastructure, analyzes it for systemic risks, and produces a report.
 
-**WHAT DID I BUILD?**
+**What did I build?**
 
-*Diagram: `mapping.py` → `map.json` → `reporting.py`*
-
-My mapping agent discovers the colony and writes its findings to `/rover/output/map.json`.
-
-My reporting agent reads `map.json` and produces an analysis report.
+I wrote three files that work together: `mapping.py` → `map.json` → `reporting.py` My mapping agent discovers the colony and writes its findings to `/rover/output/map.json`. My reporting agent reads `map.json` and produces an analysis report.
 
 I started by writing `mapping.py`. It is entirely deterministic. It discovers pods through a port scan on the documented range. I initially considered using `nmap`, but that would be an anti-pattern in any real network environment: IDS tools would flag it, segmentation could block it, and in a security context, that matters. I also ruled out hardcoded mapping because it removes any meaningful auto-discovery. In production, I would use DNS SRV-record service discovery.
 
-Once it finds the pods, the mapper traverses all declared dependencies and supply relationships breadth-first until every pod has been fully visited.
+Once the mapping file finds the pods, the mapper traverses all declared dependencies and supply relationships breadth-first until every pod has been fully visited. The output is `map.json`, which has four sections: pod data, relationships, discrepancies, and run metadata.
 
-The output is `map.json`, which has four sections: pod data, relationships, discrepancies, and run metadata.
+Pod data includes everything the API returned for each of the twelve pods — specs, logs, and messages — with the raw responses preserved alongside the normalized data so that nothing gets reinterpreted. Relationships are recorded by claim. If both sides agree — for example, one pod says "I depend on this," and the other says "I supply this" — the edge has two entries and is confirmed. If only one side made the claim, the edge has one entry and is flagged as `disputed: true`. Discrepancies are all the disputed edges collected into one list, with a plain-language description of what does not match.
 
-Pod data includes everything the API returned for each of the twelve pods — specs, logs, and messages — with the raw responses preserved alongside the normalized data so that nothing gets reinterpreted.
+After finishing the `mapping.py` file, I wrote `reporting.py`. It reads `map.json` and does two things in parallel. First, it runs a set of deterministic graph analyses, such as identifying which pods are most depended upon, whether there are circular dependencies, which resources have only one supplier, and what happens if a pod goes down. Second, it makes four targeted calls to an LLM: one to write the historical narrative from the logs, one to triage the discrepancies, one to draft recommendations, and one to produce the executive summary. Each call receives only the data relevant to that specific question. I also set all LLM calls to run at `temperature=0`, so that re-running the agent on the same `map.json` always produces the same report.
 
-Relationships are recorded by claim. If both sides agree — for example, one pod says "I depend on this," and the other says "I supply this" — the edge has two entries and is confirmed. If only one side made the claim, the edge has one entry and is flagged as `disputed: true`.
+**Why Did I Build It This Way?**
 
-Discrepancies are all the disputed edges collected into one list, with a plain-language description of what does not match.
+The principle I followed in the design was to assign structural reasoning — including graph traversal, cycle detection, and failure simulation — to deterministic algorithms, while leaving narrative, interpretation, and judgment to the model. Latent Defense's framing inspired this design: the company's key idea is that if you give an LLM a raw infrastructure map and ask it to reason about failure modes and attack paths, it will try to process the space as language and may produce confident-sounding but unreliable answers.
 
-Then I wrote `reporting.py`. It reads `map.json` and does two things in parallel.
-
-First, it runs a set of deterministic graph analyses, such as identifying which pods are most depended upon, whether there are circular dependencies, which resources have only one supplier, and what happens if a pod goes down.
-
-Second, it makes four targeted calls to an LLM: one to write the historical narrative from the logs, one to triage the discrepancies, one to draft recommendations, and one to produce the executive summary. Each call receives only the data relevant to that specific question. I also set all LLM calls to run at `temperature=0`, so that re-running the agent on the same `map.json` always produces the same report.
-
-**WHY DID I BUILD IT THIS WAY?**
-
-Latent Defense's framing was a useful starting point. The main idea is that if you give an LLM a raw infrastructure map and ask it to reason about failure modes and attack paths, it will try to process the space as language and may produce confident-sounding but unreliable answers.
-
-So the principle I followed in the design was to assign structural reasoning — including graph traversal, cycle detection, and failure simulation — to deterministic algorithms, while leaving narrative, interpretation, and judgment to the model.
 
 Three decisions follow directly from this principle.
 
