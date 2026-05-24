@@ -1,14 +1,14 @@
 # Selene Colony — Infrastructure Assessment
 
-*Generated: 2026-05-23T21:41:00+00:00 • Source: `map.json` produced 2026-05-22T23:56:48+00:00*
+*Generated: 2026-05-24T00:30:09+00:00 • Source: `map.json` produced 2026-05-22T23:56:48+00:00*
 
 ## Executive Summary
 
-All twelve pods self-report as nominal, but the underlying dependency data tells a materially different story. Sixteen metadata discrepancies were identified, including Aquifer operating with zero backup systems, Vault's water and coolant reserves formally decommissioned, Zephyr's humidity reclaim capacity zeroed out, and a stale Prometheus metadata entry claiming a direct Aquifer connection that no confirmed edge supports. The colony is more brittle than its status board indicates.
+All twelve pods self-report nominal status, but the infrastructure data does not support that assessment. The analysis identifies 16 discrepancies between reported and actual state, including decommissioned backup capabilities in Vault (water backup and coolant distribution listed as removed), zero active backup systems in Aquifer, and stale metadata in Prometheus suggesting a water dependency on Aquifer that no confirmed edge supports. The colony is operating with less resilience than its own records imply.
 
-The three most critical risks are as follows. First, Helios is a single-point-of-failure for electrical power to eight pods with no alternative supply; its failure triggers immediate cascade collapse of Aquifer, Terminus, Zephyr, and Hydroponics — effectively the entire life-support and production stack. Second, a tight mutual dependency loop exists among Helios, Aquifer, and Terminus: each supplies something the others require, meaning a degraded state in any one can propagate bidirectionally with no circuit-breaker. Third, the medical supply chain — Hydroponics feeding Prometheus feeding Medica, with Zephyr as the sole medical oxygen supplier — is a four-pod series chain with no redundancy at any link; a single failure anywhere ends pharmaceutical and oxygen delivery to healthcare.
+Three functional single points of failure demand immediate attention. **Helios** is the sole supplier of electrical power to eight pods — including Aquifer, Terminus, Zephyr, and Hydroponics — with no alternative source; its failure triggers near-total colony collapse. **Aquifer** is independently a SPOF, serving as sole supplier of irrigation water to Hydroponics, slurry water to Terminus, coolant water to Helios, and humidity feedstock to Zephyr across six consumers; its failure cascades into food production loss and Terminus shutdown. Critically, Helios and Aquifer are mutually dependent — each can bring down the other — forming a high-criticality interdependency loop that also implicates **Terminus**, which is the sole supplier of silicon feedstock to Helios and raw materials to Forge; Terminus failure halts power generation and manufacturing simultaneously.
 
-**Phase 3 expansion should not proceed as planned.** Adding load to a network with no power redundancy, decommissioned reserves, and confirmed cascade pathways through life-critical systems is unacceptable risk. Expansion may proceed conditionally once a secondary power source is commissioned, the Helios–Aquifer–Terminus dependency cycle is broken with at least one redundant supply path, and Vault's decommissioned reserves are restored or replaced.
+Phase 3 expansion should not proceed as planned. Adding load to this infrastructure before redundancy is established for Helios, Aquifer, and Terminus would increase colony-wide failure exposure, not distribute it. Conditional approval is possible only after backup power capacity is confirmed for Aquifer and Terminus, a secondary water source or storage buffer is operational, and Vault's decommissioned reserves are restored or formally replaced.
 
 ## Methodology
 
@@ -86,11 +86,11 @@ Each row is a resource for which only one pod is acknowledged as supplier across
 
 **5 simple directed cycles detected.** Long cycles in a densely-connected colony are typically derivative — multiple paths through the same nucleus of mutually dependent pods. Below are the **5 shortest cycles**, which represent direct mutual dependencies and the smallest deadlock loops.
 
-- `terminus` → `helios` → `terminus`
-- `terminus` → `aquifer` → `terminus`
 - `aquifer` → `helios` → `aquifer`
-- `terminus` → `helios` → `aquifer` → `terminus`
-- `terminus` → `aquifer` → `helios` → `terminus`
+- `aquifer` → `terminus` → `aquifer`
+- `terminus` → `helios` → `terminus`
+- `aquifer` → `helios` → `terminus` → `aquifer`
+- `aquifer` → `terminus` → `helios` → `aquifer`
 
 ### Metadata resilience anomalies
 
@@ -261,188 +261,190 @@ The mapping agent flags discrepancies but does not adjudicate them. The reportin
 
 ### 1. `prometheus` ↔ `aquifer` — synthesis_water
 **Triage**: `needs_human_review`
-**Most likely explanation** (confidence: medium): Prometheus has a real physical dependency on aquifer-supplied synthesis_water that aquifer has simply failed to register in its outbound dependency list, leaving a gap in the water supply chain record.
+**Most likely explanation** (confidence: medium): Prometheus has a real operational dependency on synthesis_water from aquifer that was omitted from aquifer's supply manifest, representing a gap in aquifer's recorded outflows.
 **Alternative explanations**:
-- Prometheus may have recently switched water sources and its dependency graph was not updated to reflect the new supplier, making the aquifer claim stale.
-- The aquifer pod may categorize this flow under a different resource label (e.g., `process_water` or `filtered_water`), causing a taxonomy mismatch that hides an otherwise real physical link.
+- The dependency was recently established and aquifer's dependency graph has not yet been updated to reflect the new supply relationship.
+- Prometheus may be drawing synthesis_water from an intermediate buffer or secondary source that itself draws from aquifer, causing a misattribution of the direct supplier.
 
 ---
 
 ### 2. `sentinel` ↔ `artemis` — administrative_oversight
 **Triage**: `likely_benign`
-**Most likely explanation** (confidence: high): Artemis models administrative_oversight as a unilateral governance output it pushes to sentinel, while sentinel does not register passive oversight relationships as explicit dependencies in its graph.
+**Most likely explanation** (confidence: high): Artemis models administrative_oversight as a top-down governance flow it pushes to sentinel, while sentinel does not register passive oversight as an active dependency it pulls, creating a directional/taxonomy mismatch rather than a real gap.
 **Alternative explanations**:
-- The relationship may be directionally inverted in one pod's model, with sentinel actually overseeing artemis rather than the reverse.
-- Sentinel's dependency graph may simply be incomplete due to a configuration omission during a recent update cycle.
+- Sentinel's dependency graph was configured to exclude soft administrative flows as a deliberate modeling choice, masking what is in practice a real authorization requirement.
+- The oversight relationship was recently formalized in artemis's records but sentinel's graph has not been updated to reflect it.
 
 ---
 
 ### 3. `forge` ↔ `artemis` — project_approvals
 **Triage**: `likely_benign`
-**Most likely explanation** (confidence: high): Forge does not model received approvals as operational dependencies in its graph, treating project_approvals as an administrative precondition rather than a tracked resource flow.
+**Most likely explanation** (confidence: high): Artemis records project_approvals as an outbound governance flow it issues to forge, but forge does not model received approvals as a named dependency, reflecting a consistent directional/taxonomy mismatch in how the two pods classify administrative flows.
 **Alternative explanations**:
-- Artemis may be recording a planned or future approval relationship that has not yet been activated on forge's side.
-- The approval flow may have been deprecated and removed from forge's records while artemis's outbound list was not cleaned up.
+- Forge operates under a standing blanket authorization and therefore does not register individual project approvals as discrete dependencies.
+- The approval relationship is new and forge's dependency graph has not yet been updated.
 
 ---
 
 ### 4. `prometheus` ↔ `artemis` — research_authorization
 **Triage**: `likely_benign`
-**Most likely explanation** (confidence: high): Prometheus treats research_authorization as an implicit governance precondition rather than a trackable resource dependency, so it does not appear in its inbound dependency list.
+**Most likely explanation** (confidence: high): Artemis records research_authorization as an outbound administrative flow, while prometheus does not model received authorizations as named dependencies, a common directional mismatch for governance-type resources.
 **Alternative explanations**:
-- Artemis may be asserting a prospective authorization relationship for a project not yet formally initiated by prometheus.
-- A taxonomy difference may mean prometheus records this under a different label such as `operational_clearance`.
+- Prometheus operates under a long-standing blanket research mandate and has never registered individual authorizations as discrete dependencies.
+- A recent policy change created the authorization requirement in artemis's records but prometheus's graph was not updated accordingly.
 
 ---
 
 ### 5. `vault` ↔ `artemis` — reserve_management
 **Triage**: `likely_benign`
-**Most likely explanation** (confidence: high): Vault does not register reserve_management directives as a dependency because it treats them as external policy inputs rather than operational resource flows it depends on.
+**Most likely explanation** (confidence: high): Artemis records reserve_management as an administrative service it provides to vault, but vault does not classify received management directives as a dependency, reflecting a standard push-vs-pull modeling asymmetry for oversight-type flows.
 **Alternative explanations**:
-- Artemis may have recently assumed a reserve oversight role that vault's dependency graph has not yet been updated to reflect.
-- The relationship may be directionally misrecorded, with vault actually providing reserve status data to artemis rather than receiving management directives.
+- Vault treats reserve_management as an internal function and does not acknowledge external direction from artemis in its dependency graph.
+- The relationship was added to artemis's records during a governance restructuring that vault's graph has not yet incorporated.
 
 ---
 
 ### 6. `medica` ↔ `helios` — electrical_power
 **Triage**: `needs_human_review`
-**Most likely explanation** (confidence: medium): Medica has a real physical dependency on helios-supplied electrical power that medica has failed to declare in its inbound dependency list, creating a dangerous blind spot for a safety-critical medical facility.
+**Most likely explanation** (confidence: medium): Medica has a real operational dependency on electrical_power from helios that is missing from medica's own dependency declarations, representing a potentially dangerous undocumented reliance for a medical facility.
 **Alternative explanations**:
-- Medica may draw power from a redundant or backup source and considers helios a secondary supplier not worth declaring as a formal dependency.
-- A recent infrastructure change may have rerouted medica's power supply away from helios, leaving helios's outbound record stale.
+- Medica receives power through an intermediate distribution node and attributes its power dependency to that node rather than directly to helios, causing a supplier-attribution mismatch.
+- Medica's dependency graph was last updated before a power-routing change that made helios its direct supplier, leaving the record stale.
 
 ---
 
 ### 7. `sentinel` ↔ `nexus` — comms_relay
 **Triage**: `needs_human_review`
-**Most likely explanation** (confidence: medium): Sentinel relies on nexus for communications relay in practice but has not registered this as a formal dependency, leaving a gap that could mask a single point of failure in security communications.
+**Most likely explanation** (confidence: medium): Nexus supplies comms_relay to sentinel as part of colony-wide communications infrastructure, but sentinel's dependency graph omits this link, potentially hiding a single point of failure for security communications.
 **Alternative explanations**:
-- Sentinel may use a dedicated, independent comms channel and nexus's claim reflects an outdated or aspirational routing plan.
-- The relationship may be directionally inverted, with nexus actually depending on sentinel's relay infrastructure rather than supplying to it.
+- Sentinel has a redundant or independent comms capability and deliberately does not declare a dependency on nexus's relay.
+- The comms_relay relationship is a broadcast/passive service that sentinel's graph modeling convention excludes from dependency declarations.
 
 ---
 
 ### 8. `nexus` ↔ `sentinel` — sensor_feeds
 **Triage**: `needs_human_review`
-**Most likely explanation** (confidence: medium): Nexus receives sensor_feeds from sentinel operationally but has not declared this inbound dependency, which could obscure a real data-flow dependency critical to colony monitoring.
+**Most likely explanation** (confidence: medium): Sentinel supplies sensor_feeds to nexus as a real operational data flow, but nexus has not registered this as a declared dependency, leaving a gap in nexus's documented inputs.
 **Alternative explanations**:
-- Nexus may aggregate sensor data from multiple sources and does not model individual feed providers as formal dependencies.
-- A recent architectural change may have moved sensor aggregation to a different pod, leaving sentinel's outbound claim stale.
+- Nexus treats sensor_feeds as supplementary telemetry rather than a hard dependency and intentionally omits it from its dependency graph.
+- Nexus aggregates sensor data from multiple sources and models the dependency at a higher abstraction level, not attributing it directly to sentinel.
 
 ---
 
 ### 9. `artemis` ↔ `sentinel` — threat_assessment
 **Triage**: `needs_human_review`
-**Most likely explanation** (confidence: medium): Artemis receives threat assessments from sentinel operationally but has not registered this as a dependency, which could hide a gap in the colony's security decision-making chain.
+**Most likely explanation** (confidence: medium): Sentinel produces threat_assessment outputs consumed by artemis for command decisions, but artemis has not declared this as a dependency, potentially obscuring a critical security information flow.
 **Alternative explanations**:
-- Artemis may source threat intelligence from a different pod and sentinel's outbound claim reflects a superseded routing.
-- The relationship may be directionally misrecorded, with sentinel actually depending on artemis's threat assessment outputs rather than supplying them.
+- Artemis treats threat_assessment as advisory input rather than an operational dependency and excludes it from its graph by convention.
+- The threat_assessment feed is routed through an intermediary node, and artemis attributes the dependency to that node rather than directly to sentinel.
 
 ---
 
 ### 10. `aquifer` ↔ `forge` — replacement_pumps
 **Triage**: `needs_human_review`
-**Most likely explanation** (confidence: medium): Aquifer relies on forge-supplied replacement pumps for maintenance continuity but has not declared this dependency, which could mask a critical supply chain gap for water infrastructure.
+**Most likely explanation** (confidence: medium): Forge supplies replacement_pumps to aquifer as a real maintenance dependency, but aquifer has not declared this in its dependency graph, leaving a gap in documented maintenance supply chains for a critical water infrastructure node.
 **Alternative explanations**:
-- Aquifer may source replacement pumps from a different supplier (e.g., an external logistics pod) and forge's claim reflects a lapsed or planned arrangement.
-- Aquifer may hold sufficient pump inventory on-site and does not model consumable replenishment as a live dependency.
+- Aquifer maintains an on-hand spare inventory and does not model consumable replacement parts as active dependencies until stock is depleted.
+- The replacement_pumps relationship is intermittent/on-demand and aquifer's graph only captures continuous operational flows.
 
 ---
 
 ### 11. `terminus` ↔ `forge` — cutting_tools
 **Triage**: `needs_human_review`
-**Most likely explanation** (confidence: medium): Terminus uses forge-supplied cutting tools operationally but has not registered this as a formal dependency, potentially obscuring a supply chain risk for physical infrastructure operations.
+**Most likely explanation** (confidence: medium): Forge supplies cutting_tools to terminus as a real operational dependency, but terminus has not declared this in its graph, representing an undocumented reliance on forge for physical tooling.
 **Alternative explanations**:
-- Terminus may source cutting tools through a separate logistics or procurement pod and forge's claim is a duplicate or legacy record.
-- Terminus may maintain its own tool fabrication capability and does not consider forge a dependency for this resource.
+- Terminus maintains its own tool inventory and does not model replenishment from forge as an active dependency, only requesting tools on an ad-hoc basis.
+- Cutting_tools are classified as consumables in terminus's modeling convention and excluded from its structural dependency graph.
 
 ---
 
 ### 12. `artemis` ↔ `forge` — fabricated_components
 **Triage**: `likely_benign`
-**Most likely explanation** (confidence: high): Artemis does not model received fabricated_components as a tracked operational dependency, treating them as discretionary procurement items rather than critical resource flows.
+**Most likely explanation** (confidence: high): Forge records fabricated_components as an outbound supply to artemis, but artemis does not declare receipt of fabricated components as a named dependency, likely because artemis models these as discretionary procurement rather than an operational dependency.
 **Alternative explanations**:
-- Artemis may source fabricated components from multiple suppliers and does not attribute a formal dependency to forge specifically.
-- The relationship may be directionally inverted, with artemis actually supplying design specifications or authorizations to forge rather than receiving components.
+- Artemis receives fabricated_components only on an occasional project basis and intentionally excludes non-continuous flows from its dependency graph.
+- The components are routed through an intermediate logistics node, and artemis attributes any dependency to that node rather than directly to forge.
 
 ---
 
 ### 13. `artemis` ↔ `vault` — emergency_rations
 **Triage**: `needs_human_review`
-**Most likely explanation** (confidence: medium): Artemis has a real dependency on vault-held emergency rations for personnel sustenance continuity but has not declared it, which is a food-safety concern that warrants human verification.
+**Most likely explanation** (confidence: medium): Vault supplies emergency_rations to artemis as a real food-safety dependency, but artemis has not declared this in its graph, potentially hiding a critical life-support supply relationship.
 **Alternative explanations**:
-- Artemis may source food through hydroponics or another pod and does not consider vault's emergency rations a live dependency under normal operations.
-- The relationship may reflect a contingency-only flow that vault records proactively but artemis does not register as an active dependency.
+- Artemis does not model emergency_rations as an active dependency because they are held in reserve and only activated under contingency conditions, leading to an intentional omission.
+- The rations are stored at artemis but ownership and management remain with vault, creating a classification ambiguity about whether a dependency relationship exists.
 
 ---
 
 ### 14. `artemis` ↔ `zephyr` — atmospheric_regulation
 **Triage**: `needs_human_review`
-**Most likely explanation** (confidence: medium): Artemis depends on zephyr for atmospheric regulation of its habitat spaces but has omitted this from its dependency list, creating a potentially dangerous blind spot for a life-critical resource.
+**Most likely explanation** (confidence: medium): Zephyr supplies atmospheric_regulation to artemis as a real life-critical service, but artemis has not declared this dependency, representing a potentially dangerous gap in documented atmosphere management for the artemis pod.
 **Alternative explanations**:
-- Artemis may have its own independent atmospheric management subsystem and does not rely on zephyr as a primary supplier.
-- The relationship may be directionally inverted, with artemis providing atmospheric policy or setpoints to zephyr rather than receiving regulated atmosphere.
+- Artemis has its own independent atmospheric subsystem and does not depend on zephyr, meaning zephyr's claim reflects an outdated or erroneous supply record.
+- Atmospheric_regulation is modeled as colony-wide infrastructure in artemis's convention and is excluded from pod-level dependency declarations.
 
 ---
 
-### 15. `medica` ↔ `hydroponics` — dietary_supplements
+### 15. `artemis` ↔ `hydroponics` — fresh_produce
 **Triage**: `needs_human_review`
-**Most likely explanation** (confidence: medium): Medica receives dietary supplements from hydroponics for patient care but has not declared this dependency, which is a medical-supply gap that requires human verification given the safety implications.
+**Most likely explanation** (confidence: medium): Hydroponics supplies fresh_produce to artemis as a real food dependency, but artemis has not declared this in its graph, leaving an undocumented reliance on a food production node.
 **Alternative explanations**:
-- Medica may source dietary supplements through vault's emergency stores or an external supply chain and does not consider hydroponics a formal supplier.
-- Hydroponics may be recording a planned or trial supply relationship that medica has not yet formally accepted into its dependency model.
+- Artemis sources food through vault's emergency_rations or a central distribution system and does not model a direct dependency on hydroponics.
+- Fresh_produce delivery to artemis is a recent arrangement added to hydroponics's records but not yet reflected in artemis's dependency graph.
+
+---
+
+### 16. `medica` ↔ `hydroponics` — dietary_supplements
+**Triage**: `needs_human_review`
+**Most likely explanation** (confidence: medium): Hydroponics supplies dietary_supplements to medica as a real medical-support dependency, but medica has not declared this in its graph, potentially obscuring a supply chain critical to patient care.
+**Alternative explanations**:
+- Medica sources dietary_supplements through a central pharmacy or vault inventory and does not model a direct dependency on hydroponics.
+- The dietary_supplements relationship is a recent addition to hydroponics's supply records that has not yet been incorporated into medica's dependency declarations.
 
 ## Historical Narrative
 
-**The colony's infrastructure story is fundamentally one of progressive consolidation**, executed in twelve discrete steps across roughly eighteen months, each individually defensible but collectively eliminating nearly every redundancy in the water and power subsystems. The sequence began with Directive 2093-089 (20 March 2093), approved by Colony Director Liu, which reallocated the Vault Reserve's secondary water system budget to fund Sentinel Array's independent solar expansion. By 15 March 2093, vault's secondary water reserve had been placed in maintenance reserve status — a bureaucratic category that, as vault manager Torres confirmed in a February 2094 comm to artemis_admin, meant "no active water backup capability at this time." That decision was followed on 11 May 2093 by terminus rerouting its mining slurry processing from a dual-feed configuration to a single aquifer loop, decommissioning the redundant plumbing. On 20 June 2093, zephyr retired its internal humidity reclamation loop entirely, making aquifer the sole source of its atmospheric moisture budget — a change zephyr_ops flagged to artemis_admin on 18 March 2094: "our humidity feedstock draw from Aquifer is now 100% of our atmospheric moisture budget." Project 2093-P4 (approved 8 September 2093, executed 30 September–1 October 2093) then sealed prometheus's direct aquifer connection and rerouted synthesis water through hydroponics's irrigation circuit. Finally, Directive 2094-011 (2 January 2094) decommissioned vault's coolant distribution equipment, with helios confirming on 14 February 2094 that aquifer's thermal regulation loop was now the sole cooling source for its battery banks. The result is documented in vault's own metadata: `decommissioned_reserves` lists both `water_backup` and `coolant_distribution` as explicitly removed capabilities.
+**The colony's infrastructure was shaped by a concentrated burst of consolidation decisions in 2093, all of which remain structurally visible today.** Across the twelve consolidation events on record, five directly removed redundancy from water-related systems. In March 2093, Directive 2093-089 — approved by Colony Director Liu — transferred Vault's secondary water reserve to maintenance reserve status, redirecting its budget to Sentinel's independent solar expansion. By May 2093, Terminus had decommissioned its dual-feed slurry processing configuration in favor of a single Aquifer loop. In June 2093, Zephyr retired its internal humidity reclamation loop entirely, making Aquifer the sole source of its atmospheric moisture budget — a fact Zephyr ops flagged to Artemis in March 2094: *"our humidity feedstock draw from Aquifer is now 100% of our atmospheric moisture budget."* In September–October 2093, project 2093-P4 sealed Prometheus's direct Aquifer connection and rerouted synthesis water through Hydroponics' irrigation circuit. Finally, in January–February 2094, Directive 2094-011 decommissioned Vault's coolant distribution equipment, transferring it to Forge for repurposing and leaving Aquifer as the sole coolant source for Helios's battery banks. The cumulative result is that Aquifer now carries 8 unique upstream consumers (per the `most_depended_upon` metric) and is the sole supplier for 6 distinct confirmed resources — irrigation water, slurry water, coolant water, humidity feedstock, sterilization water, and cooling water — each a separate entry in `resource_spofs`. Vault's pod metadata explicitly lists `water_backup` and `coolant_distribution` as decommissioned capabilities, and its `backup_systems` count stands at zero. There is no water redundancy anywhere in the confirmed topology.
 
-**The current topology reflects the cumulative weight of those twelve consolidation events with stark clarity.** Aquifer now holds 7 sole-supplier resource flows — irrigation_water to hydroponics, slurry_water to terminus, coolant_water to helios, humidity_feedstock to zephyr, sterilization_water to medica, cooling_water to forge, and potable_water to artemis — and registers 8 unique upstream consumers by the `most_depended_upon` metric, second only to helios's 9. Aquifer's own metadata records `backup_systems: 0`. Its May 2094 capacity report shows throughput averaging 41,200 L/day against a rated capacity of 45,000 L/day — 91.6% utilization — with no backup loop and no redundant feed path anywhere in the confirmed graph. Helios is equally exposed: it is the sole supplier of electrical_power to 8 confirmed consumers, with no alternative supplier recorded for any of them, and the failure simulation confirms that a helios outage produces likely cascade failures across aquifer, artemis, forge, hydroponics, terminus, and zephyr simultaneously. The two nodes are also mutually dependent — aquifer supplies coolant_water to helios while helios supplies electrical_power to aquifer — one of five dependency cycles in the graph, meaning a degradation event in either propagates immediately into the other.
+**The dependency graph contains a cluster of mutually reinforcing cycles that compound the Aquifer and Helios risk profiles.** The five shortest cycles all involve Aquifer, Helios, and Terminus in various two- and three-node combinations. Helios supplies electrical power to Aquifer (high criticality, no alternative); Aquifer supplies coolant water back to Helios (medium criticality, no alternative); Terminus supplies silicon feedstock to Helios (high criticality, no alternative) and receives slurry water from Aquifer (high criticality, no alternative). A failure simulation for Helios projects direct impact on 8 consumers with no alternatives for any of them, and likely cascade failures across aquifer, forge, hydroponics, terminus, and zephyr. A failure simulation for Aquifer projects direct impact on 7 consumers, with likely cascades into hydroponics and terminus — which would in turn starve Helios of silicon feedstock, completing a colony-wide collapse loop. Helios is the sole supplier of electrical power to all eight of its confirmed consumers, and Zephyr's own contingency documentation, as of May 2094, acknowledged only *"about 4 hours of reserve"* before processors would need to cycle down — a question directed to Helios ops with no logged response in the record.
 
-**Several divergences between the historical record and the current dependency graph deserve explicit attention.** Prometheus's metadata still carries `water_source: aquifer-direct`, but the confirmed edge from prometheus to aquifer was sealed under project 2093-P4 and no confirmed edge exists in the current graph; the only water path to prometheus now runs through hydroponics's irrigation header, a fact prometheus_lead acknowledged in a January 2094 comm noting that "response time on any pressure issues might be a bit slower going through the shared line." This creates a hidden coupling: hydroponics_lead warned artemis_admin on 22 April 2094 that "if aquifer throughput dips we'd both feel it same day," meaning an aquifer pressure event simultaneously degrades crop irrigation and pharmaceutical synthesis water — a co-failure mode not visible from the edge list alone. Separately, the edge from medica to helios for electrical_power carries `disputed: true`, meaning medica's power supply arrangement is unconfirmed in the current graph; zephyr_ops asked helios_ops on 2 May 2094 about backup power capacity for their sector and noted only "about 4 hours of reserve on our end," suggesting contingency power planning is being conducted pod-by-pod without a colony-wide answer. Zephyr's metadata also records `humidity_reclaim_pct: 0`, corroborating the retired reclamation loop and confirming there is no fallback if aquifer's humidity feedstock supply is interrupted.
+**A significant divergence exists between the current dependency graph and the historical record regarding Prometheus's water supply.** The stale relationship metadata flags that Prometheus's pod metadata still records `water_source: aquifer-direct`, yet no confirmed edge from Prometheus to Aquifer exists in the current topology. The actual supply path — rerouted through Hydroponics' irrigation circuit per project 2093-P4 — is confirmed only by a disputed edge (`prometheus → aquifer, synthesis_water, disputed: true`), which the graph correctly marks as unconfirmed. Prometheus lead acknowledged this informally in a January 2094 comm to Hydroponics: *"response time on any pressure issues might be a bit slower going through the shared line. not worried, just wanted it documented somewhere."* That documentation never made it into the confirmed dependency graph. Hydroponics lead separately noted to Artemis in April 2094 that Prometheus draws roughly 15% of the shared Aquifer allocation, adding: *"if aquifer throughput dips we'd both feel it same day."* Aquifer's own May 2094 capacity report shows utilization at 91.6% of rated capacity — leaving a margin of roughly 3,800 L/day against a system that now carries no backup and serves a pharmaceutical synthesis chain whose water path is not formally confirmed in the infrastructure record.
 
-**The pattern of complacency is most visible in the safety review record and in how contingency inquiries were handled.** The July 2094 semi-annual safety review logged "all pods reporting nominal, no outstanding safety actions" — a finding that is technically accurate given current uptime but which takes no account of the structural changes made since commissioning. When zephyr_ops raised a contingency planning inquiry about helios power stability, artemis_safety responded on 5 March 2094: "Helios power infrastructure has been stable for 2+ years with no unplanned outages. No action required at this time." This response treats operational history as a substitute for redundancy analysis. Helios has indeed run continuously since colony day one (uptime_days: 943), but the failure simulation shows that a single helios outage now has `direct_impact_count: 8` with no alternative supply path for any affected consumer — a consequence of consolidation decisions made after that stability record was established. The vault manager's April 2094 note about water reserve status was acknowledged by artemis_ops with "current ops plan directs all water needs through Aquifer Module per standard procedures," closing the loop administratively without addressing the absence of any backup. Meanwhile, medica's July 2094 pharmacy stock review noted only 12 days of critical medications on hand — within policy minimums — but the pharmaceutical supply chain runs prometheus → medica with no alternative supplier, and prometheus's water supply now depends on hydroponics's irrigation circuit remaining pressurized, which in turn depends on aquifer, which depends on helios. The colony's nominal status across all twelve pods reflects genuine operational competence; it does not reflect the degree to which that competence has been allowed to substitute for the redundancy that was systematically removed.
+**The pattern of complacency is most visible in the gap between the safety review record and the actual risk accumulation.** The July 2094 semi-annual safety review concluded with *"all pods reporting nominal. No outstanding safety actions"* — a finding that is technically accurate given that every pod shows nominal status and zero alerts, but which reflects no stress-testing of the consolidated topology. Helios has had no unplanned outages in over two years, a fact Artemis safety cited in March 2094 when dismissing Zephyr's contingency planning inquiry: *"no action required at this time."* Yet the Helios maintenance log from April 2094 records silicon feedstock consumption at 140% of quarterly forecast during a cluster B3 repair — a demand spike that passed through the Terminus → Helios sole-supplier relationship without triggering any documented review of supply buffer adequacy. Medica's July 2094 pharmacy stock review notes only 12 days of critical medications on hand, within policy minimums, with a restocking order placed with Prometheus — a chain that runs Prometheus → Medica (pharmaceuticals, high criticality, no alternative), itself dependent on Hydroponics for nutrient compounds (high criticality, no alternative), which in turn depends on Aquifer for irrigation water (high criticality, no alternative). The colony's medical supply continuity thus rests on an unbroken four-link chain with no confirmed redundancy at any node, and the last safety review did not identify it as an outstanding action.
 
 ## Recommendations
 
-1. **[HIGH PRIORITY] Eliminate the helios single-point-of-failure for electrical_power before Phase 3 expansion begins.**
-
-   Helios is the sole supplier of `electrical_power` to 8 pods — aquifer, artemis, forge, hydroponics, nexus, terminus, vault, and zephyr — with no alternative source confirmed for any of them. Failure simulation confirms that a helios outage triggers immediate high-criticality cascade failures across aquifer, artemis, forge, hydroponics, terminus, and zephyr, effectively collapsing the colony's water, food, manufacturing, and atmospheric systems simultaneously. Helios also depends on terminus for `silicon_feedstock` (see Recommendation 2), meaning a terminus failure can indirectly cause a colony-wide blackout. Phase 3 will add load to an already maximally depended-upon pod (9 inbound dependency edges, highest in the network). **Action:** Engineering and Infrastructure must design and commission a secondary power generation capability — whether a second solar array pod, a backup RTG bank, or distributed micro-generation at aquifer, zephyr, and hydroponics — sufficient to sustain life-critical pods (aquifer, zephyr, medica, hydroponics) independently of helios for a minimum of 72 hours. A phased redundancy roadmap with interim load-shedding protocols must be delivered to the Colony Director within 30 days; physical redundancy work must be underway within 90 days. **Owner:** Infrastructure Engineering, with Power Systems as lead sub-team.
-
----
-
-2. **[HIGH PRIORITY] Break or buffer the terminus–helios–aquifer dependency cycle to prevent a three-pod collapse scenario.**
-
-   The findings identify 5 dependency cycles, all involving terminus, helios, and aquifer in various two- and three-node combinations: (terminus → helios), (terminus → aquifer), (aquifer → helios), (terminus → helios → aquifer), and (terminus → aquifer → helios). These cycles mean that degradation in any one of the three nodes propagates bidirectionally. Concretely: terminus supplies `silicon_feedstock` to helios (high criticality, no alternative) and `slurry_water` to aquifer (high criticality, no alternative); aquifer supplies `coolant_water` to helios (medium criticality, no alternative) and `pump_components` back to terminus (medium criticality, no alternative). A terminus failure cascades to helios (power loss) and then to all 8 electrical consumers. An aquifer failure degrades helios cooling, risking helios output reduction or shutdown. **Action:** Resource Management and Infrastructure Engineering must jointly map each cyclic dependency and identify which single edge, if buffered with a stockpile or rerouted through an alternative supplier, breaks the most cycles at lowest cost. Priority interventions within 90 days: (a) establish a minimum 14-day silicon_feedstock buffer stockpile at helios, sourced from vault or a new storage allocation, to decouple terminus → helios; (b) investigate whether sentinel's confirmed `ice_harvest_l_day` capacity of 120 L/day can be redirected to provide emergency coolant_water to helios, partially decoupling aquifer → helios. A full cycle-breaking design proposal is due within 45 days. **Owner:** Resource Management (lead), Infrastructure Engineering (support).
+1. **[HIGH PRIORITY] Redesign electrical power distribution to eliminate helios as a single point of failure.**
+Failure simulation for helios shows immediate loss of electrical_power to 8 pods (aquifer, artemis, forge, hydroponics, nexus, terminus, vault, zephyr), with 6 of those (aquifer, artemis, forge, hydroponics, terminus, zephyr) flagged as likely cascade failures — effectively a colony-wide blackout from a single pod failure. Helios is also the most depended-upon pod in the network (9 inbound dependency edges). Before Phase 3 adds further load, the power architecture must be diversified. Actions: (a) Commission a secondary generation source (e.g., a dedicated Phase 3 solar array or RTG backup unit) capable of sustaining at minimum aquifer, zephyr, medica, and hydroponics independently of helios. (b) Install pod-level battery buffer systems at aquifer and zephyr, the two pods whose failure cascades most broadly. (c) Establish a formal load-shedding priority protocol so that in a partial helios degradation event, life-critical consumers (medica, zephyr, hydroponics) are protected before industrial consumers (forge, terminus). **Owner: Power & Infrastructure Engineering, with sign-off from Colony Director. Target: redesign specification complete within 45 days; secondary source procurement initiated within 90 days.**
 
 ---
 
-3. **[HIGH PRIORITY] Restore or replace vault's decommissioned water_backup and coolant_distribution capabilities before Phase 3 load increases.**
-
-   Vault was commissioned on day 10 of colony operations with the explicit role of "Emergency reserves and backup systems," yet its metadata explicitly lists `water_backup` and `coolant_distribution` as decommissioned capabilities. These are precisely the redundancies that would mitigate the highest-risk failure modes identified above: aquifer supplies coolant_water to helios with no alternative, and irrigation_water to hydroponics with no alternative. Vault's decommissioned reserves represent the colony's original design intent for resilience, and their absence is a direct contributor to the single-point-of-failure density in the water and cooling subsystems. The timing of decommissioning is not recorded in the findings, which itself is a governance concern. **Action:** The Colony Director must commission an immediate audit of vault (owner: Logistics and Emergency Management) to determine: (a) why water_backup and coolant_distribution were decommissioned, (b) whether physical infrastructure remains and can be reactivated, or (c) whether new reserve capacity must be built. If reactivation is feasible, a restoration plan must be submitted within 30 days and completed within 90 days. If not feasible, vault's role designation must be formally revised and alternative emergency reserve infrastructure scoped for Phase 3. **Owner:** Logistics and Emergency Management, reporting directly to Colony Director.
-
----
-
-4. **[HIGH PRIORITY] Establish pharmaceutical and medical oxygen redundancy for medica, which has two independent high-criticality single-point-of-failure supply chains.**
-
-   Medica depends on prometheus as the sole supplier of `pharmaceuticals` (high criticality, no alternative) and on zephyr as the sole supplier of `medical_oxygen` (high criticality, no alternative). These are independent failure paths: a prometheus failure (which itself depends on hydroponics for `nutrient_compounds`, also sole-supplied with no alternative) cuts pharmaceuticals; a zephyr failure cuts medical_oxygen. Either failure alone cascades to medica. Zephyr additionally shows a metadata anomaly: `humidity_reclaim_pct` is 0, indicating no humidity reclamation is occurring despite the field implying a resilience function — this raises concern about zephyr's operational efficiency and margin. Medica has been operational since day 3 of the colony (uptime 940 days) and is a life-safety pod; its failure has no downstream supply consequences but direct human health consequences. **Action:** Medical Services and Life Support Engineering must within 60 days: (a) establish a minimum 30-day pharmaceutical stockpile at medica drawn from current prometheus output; (b) investigate and remediate zephyr's `humidity_reclaim_pct = 0` anomaly — if reclamation hardware is non-functional, repair or replacement must be scoped; (c) assess whether sentinel's independent atmospheric capacity (180 kW independent power, ice harvest) can serve as an emergency oxygen source for medica in a zephyr failure scenario, and document this as a formal contingency procedure. **Owner:** Medical Services (pharmaceuticals stockpile), Life Support Engineering (zephyr remediation and sentinel contingency).
+2. **[HIGH PRIORITY] Break the aquifer–helios–terminus dependency cycle and eliminate aquifer's zero-backup-systems status before Phase 3 commissioning.**
+The findings identify 5 dependency cycles, all involving aquifer, helios, and terminus in various two- and three-node combinations (aquifer↔helios, aquifer↔terminus, terminus↔helios, aquifer→helios→terminus, aquifer→terminus→helios). This means failure in any one of these three pods can propagate bidirectionally through the others. Compounding this, aquifer's metadata explicitly records `backup_systems = 0`, meaning there is no resilience buffer at the node that supplies coolant_water to helios, irrigation_water to hydroponics, slurry_water to terminus, and humidity_feedstock to zephyr. Actions: (a) Water Systems must audit aquifer's physical redundancy and install at minimum one backup pump train and a short-duration water storage buffer (target: 72-hour autonomous operation) within 60 days. (b) Infrastructure Engineering must evaluate whether the aquifer→helios coolant dependency and the helios→aquifer power dependency can be partially decoupled — for example, by giving aquifer a dedicated low-draw power circuit from the secondary source recommended in Recommendation 1, so that aquifer does not lose pump capability when helios fails. (c) The terminus→aquifer pump_components supply chain should be reviewed for stockpile adequacy; a 30-day component reserve held at aquifer would reduce cycle-propagation risk. **Owner: Water Systems (aquifer backup); Infrastructure Engineering (cycle decoupling); Logistics (component stockpile). Target: 90 days.**
 
 ---
 
-5. **[MEDIUM PRIORITY] Investigate and resolve the prometheus–aquifer stale relationship metadata and confirm or sever the undocumented dependency.**
-
-   Prometheus metadata declares `water_source: aquifer-direct`, implying a direct dependency on aquifer for water, but no confirmed edge exists between prometheus and aquifer in the dependency graph. This is a stale or phantom relationship. The concern is twofold: if the dependency is real but unregistered, aquifer failure simulations are underestimating their blast radius (prometheus would also be affected, cutting nutrient_compounds to medica's pharmaceutical chain); if the dependency is not real, the metadata is misleading and may cause incorrect emergency response decisions. Given that prometheus sits in the middle of the hydroponics → prometheus → medica life-safety chain, any ambiguity in its dependencies is unacceptable ahead of Phase 3. **Action:** Research and Infrastructure Engineering must conduct a physical and systems audit of prometheus within 30 days to determine whether a water feed from aquifer exists. If confirmed: register the edge formally in the dependency graph, update failure simulations, and add prometheus to aquifer's consumer list for resilience planning. If not confirmed: update prometheus metadata to remove the stale field and document the finding. Results must be reported to the Colony Director with updated risk scores. **Owner:** Research Pod Operations (prometheus), Infrastructure Engineering (graph and simulation update).
-
----
-
-6. **[MEDIUM PRIORITY] Leverage sentinel's full independence to formally designate it as an emergency operations anchor and integrate its ice harvest capacity into colony resilience planning.**
-
-   Sentinel is the only fully independent pod in the colony: it has zero confirmed high/medium/low inbound dependencies, zero outbound supplies to other pods, 180 kW of independent power, and 120 L/day of ice harvest capacity. Despite this, sentinel's resources appear nowhere in the colony's current supply graph — its ice harvest is not routed to aquifer, its power is not available to any consumer, and it has no formal emergency role documented in the findings. This represents a significant untapped resilience asset. Sentinel has been operational for 866 days and its independence signals are confirmed. **Action:** Infrastructure Engineering and Colony Security must within 60 days produce a formal Sentinel Emergency Integration Plan that specifies: (a) the conditions under which sentinel's 180 kW independent power can be switched to supply medica, zephyr, or nexus during a helios failure; (b) whether sentinel's 120 L/day ice harvest can be routed to aquifer or directly to helios cooling during an aquifer degradation event; (c) the physical connection infrastructure required (if any) and its cost/timeline. This plan must be reviewed by the Colony Director and incorporated into Phase 3 expansion design specifications. **Owner:** Infrastructure Engineering (technical design), Colony Security (sentinel operational authority).
+3. **[HIGH PRIORITY] Restore or formally replace vault's decommissioned water_backup and coolant_distribution capabilities, and audit all decommissioned reserves before Phase 3.**
+Vault's metadata explicitly lists `decommissioned_reserves: [water_backup, coolant_distribution]`. Vault was commissioned as "Emergency reserves and backup systems" (day 10 of colony operations, uptime 933 days) — its entire design role is resilience. The decommissioning of water and coolant backup capabilities directly undermines the redundancy that would otherwise mitigate the aquifer and helios single-points-of-failure identified above. With Phase 3 expansion increasing colony population and resource demand, operating without functional emergency reserves is unacceptable. Actions: (a) Emergency Management and Water Systems must jointly assess within 30 days whether vault's water_backup capability can be physically restored or whether a replacement reserve node must be scoped into Phase 3 construction. (b) Coolant distribution backup must be evaluated in the context of helios thermal management — if helios loses aquifer coolant_water and has no alternative, helios itself may shut down thermally, triggering the colony-wide cascade described in Recommendation 1. A coolant reserve or passive cooling fallback for helios must be specified. (c) A full audit of all 12 pods for additional silently decommissioned capabilities should be completed within 45 days, as vault's case suggests this may not be an isolated instance. **Owner: Emergency Management (vault restoration); Water Systems (coolant backup); Colony Director's office (audit mandate). Target: audit 45 days; restoration plan 90 days.**
 
 ---
 
-7. **[LOW PRIORITY] Audit aquifer's backup_systems = 0 anomaly and zephyr's humidity_reclaim_pct = 0 anomaly as part of a broader metadata integrity review ahead of Phase 3.**
+4. **[HIGH PRIORITY] Establish pharmaceutical and medical oxygen redundancy for medica before Phase 3 population increase.**
+Medica is the colony's sole healthcare facility and depends on two independent sole-supplier chains, both rated high criticality and both with no alternatives: prometheus is the only supplier of pharmaceuticals, and zephyr is the only supplier of medical_oxygen. Failure simulations confirm that loss of either prometheus or zephyr directly and immediately cascades to medica failure. Additionally, zephyr's metadata records `humidity_reclaim_pct = 0`, indicating an absent reclaim capability that may reflect broader operational gaps in atmospheric processing. The pharmaceutical supply chain has a further upstream vulnerability: prometheus's metadata claims a `water_source: aquifer-direct` dependency, but no confirmed edge exists from prometheus to aquifer — this stale or phantom relationship (see stale_relationship_metadata finding) must be resolved, as an undocumented dependency is an unmanaged risk. Actions: (a) Medical Services must establish a minimum 30-day pharmaceutical stockpile at medica within 60 days, independent of prometheus's production continuity. (b) Atmospheric Systems must investigate zephyr's `humidity_reclaim_pct = 0` anomaly and restore or replace reclaim functionality within 60 days; a dedicated medical_oxygen reserve cylinder bank at medica (minimum 7-day supply) must be installed within 90 days. (c) Research & Pharmaceutical (prometheus) must clarify and formally document whether a direct water dependency on aquifer exists; if it does, that edge must be added to the dependency graph and managed accordingly; if it does not, the metadata must be corrected. **Owner: Medical Services (stockpile, O₂ reserve); Atmospheric Systems (zephyr reclaim); Research & Pharmaceutical (prometheus dependency audit). Target: 90 days.**
 
-   Two metadata anomalies are flagged: aquifer reports `backup_systems = 0` despite being the sole supplier of 6 distinct resources (irrigation_water, slurry_water, coolant_water, cooling_water, humidity_feedstock, sterilization_water, potable_water) at criticalities ranging from medium to high; and zephyr reports `humidity_reclaim_pct = 0` despite being the sole supplier of medical_oxygen and humidity_feedstock. In both cases, the field names imply resilience capacity that is confirmed absent. Aquifer has been operational for 938 days with no backup systems, and the findings record 16 total discrepancies across the dataset — indicating that metadata drift is a systemic issue, not isolated. Inaccurate metadata directly degrades the quality of failure simulations and emergency planning. **Action:** Infrastructure Engineering must within 90 days conduct a full metadata integrity audit of all 12 pods, cross-referencing declared fields against physical inspection records. Aquifer and zephyr must be prioritized in the first 30 days. For each anomaly: determine whether the field reflects a hardware gap (requiring a capital request) or a documentation error (requiring a metadata correction). A clean, validated dependency graph and pod metadata registry must be delivered as a Phase 3 pre-condition. **Owner:** Infrastructure Engineering (audit lead), Pod Operations Managers for aquifer and zephyr (physical verification).
+---
+
+5. **[MEDIUM PRIORITY] Redesign the terminus supply chain to eliminate its role as sole supplier of silicon_feedstock to helios and raw_materials to forge, and address its own slurry_water single-point dependency on aquifer.**
+Terminus failure simulation shows direct high-criticality loss to both helios (silicon_feedstock) and forge (raw_materials), with both flagged as likely cascade failures. Because helios failure then cascades colony-wide (see Recommendation 1), terminus is effectively a second-order colony-wide risk. Terminus itself has a high-criticality sole dependency on aquifer for slurry_water, meaning the aquifer↔terminus cycle (identified in the cycles findings) creates a mutual fragility: aquifer failure stops terminus, which stops helios silicon supply, which stops helios power, which stops aquifer pumps. Actions: (a) Mining & Extraction (terminus) must identify whether silicon_feedstock stockpiling at helios is feasible — a 14-day buffer would break the real-time dependency and provide recovery time. (b) Forge must assess whether raw_materials can be partially sourced from recycled or reclaimed stock held at vault or forge itself, reducing real-time dependence on terminus throughput. (c) Infrastructure Engineering must evaluate whether a secondary slurry_water source (e.g., reclaimed process water from forge or zephyr condensate) could provide terminus with partial operational continuity during aquifer degradation events. **Owner: Mining & Extraction (stockpile); Manufacturing/forge (materials buffer); Infrastructure Engineering (slurry alternative). Target: 90 days.**
+
+---
+
+6. **[MEDIUM PRIORITY] Investigate and resolve the 16 metadata discrepancies and the stale prometheus–aquifer relationship record before Phase 3 dependency mapping is finalized.**
+The findings report 16 discrepancies across the dependency graph, including the confirmed stale relationship where prometheus claims `water_source: aquifer-direct` but no edge exists, and the aquifer `backup_systems = 0` and zephyr `humidity_reclaim_pct = 0` anomalies already flagged above. With 15 supplier-only and 1 consumer-only asymmetries also noted, the current graph cannot be fully trusted as a basis for Phase 3 planning. Decisions made on an inaccurate dependency map — particularly around which pods are safe to expand load on — carry compounding risk as Phase 3 adds new nodes and edges. Actions: (a) Systems Integration must conduct a structured field-verification pass of all 12 pods within 45 days, cross-referencing physical infrastructure against metadata records and the dependency graph, and producing a corrected graph version. (b) The prometheus–aquifer relationship must be physically inspected and either confirmed (edge added) or refuted (metadata corrected) within 30 days, as it directly affects the pharmaceutical supply chain risk model. (c) A metadata governance protocol must be established — including a change-control process for decommissioning capabilities (as vault's case shows these can be silently removed) — to prevent recurrence ahead of Phase 3 onboarding of new pods. **Owner: Systems Integration (graph audit); Research & Pharmaceutical (prometheus clarification); Colony Director's office (governance protocol). Target: field audit 45 days; governance protocol 90 days.**
+
+---
+
+7. **[LOW PRIORITY] Leverage sentinel's full independence and nexus's 30-day power autonomy as resilience anchors, and formalize their roles in colony continuity planning.**
+Sentinel is classified as fully independent (180 kW independent power, 120 L/day ice harvest, zero confirmed inbound dependencies) and nexus as effectively independent (30-day independent power, only one low-criticality inbound dependency). These are the only two pods in the colony that can operate through a helios failure without immediate resource loss. Currently, neither pod's independence appears to be formally integrated into colony continuity or emergency response planning — sentinel supplies nothing outbound per the findings, and nexus supplies only data_routing to artemis. Actions: (a) Emergency Management should formally designate sentinel and nexus as continuity anchor nodes in the colony's emergency response plan within 60 days, specifying what command, communication, and monitoring functions can be sustained from these pods during a helios or aquifer failure event. (b) Sentinel's ice_harvest capability (120 L/day) should be evaluated by Water Systems as a potential emergency water source for medica or zephyr during an aquifer outage — even partial coverage would reduce cascade risk. (c) As Phase 3 expands the pod count, Systems Integration should apply the independence criteria used to classify sentinel and nexus as a design target for at least one new Phase 3 pod, ensuring the colony does not become proportionally more centralized as it grows. **Owner: Emergency Management (continuity plan); Water Systems (sentinel water evaluation); Systems Integration (Phase 3 design criteria). Target: 90 days.**
 
 ---
 
